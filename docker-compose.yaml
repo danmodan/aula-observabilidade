@@ -1,0 +1,119 @@
+version: '3.8'
+
+networks:
+  default:
+    name: bubble
+    external: true
+
+services:
+
+  jaeger:
+    container_name: jaeger
+    image: jaegertracing/all-in-one:1.40.0
+    ports:
+      - "16686:16686"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - METRICS_STORAGE_TYPE=prometheus
+      - PROMETHEUS_SERVER_URL=http://prometheus:9090
+
+  otel-collector:
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:0.68.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"
+      - "9999:9999"
+    depends_on:
+      - jaeger
+      - prometheus
+
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:v2.41.0
+    command:
+      - --web.console.templates=/etc/prometheus/consoles
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --storage.tsdb.retention.time=1h
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.route-prefix=/
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:9.3.2
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./ds-prometheus.yaml:/etc/grafana/provisioning/datasources/datasource.yml
+    environment:
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_BASIC_ENABLED=false
+    depends_on:
+      - prometheus
+
+  observabilidade-api-lb:
+    container_name: observabilidade-api-lb
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - observabilidade-api
+    ports:
+      - 8080:8080
+
+  observabilidade-api:
+    image: eclipse-temurin:17-jre-focal
+    volumes:
+      - ./opentelemetry-javaagent.jar:/app/opentelemetry-javaagent.jar
+      - ./build/libs/observabilidade-1.0.0.jar:/app/observabilidade-1.0.0.jar
+    environment:
+      - KAFKA_BROKERS=kafka:29092
+      - MONGO_URI=mongodb://mongo:27017/observabilidade
+      - ACTIVITY_URI=http://www.boredapi.com
+      - OBSERVABILIDADE_URI=http://observabilidade-api-lb:8080
+      - SPRING_APPLICATION_NAME=observabilidade-api
+      - SPRING_PROFILES_ACTIVE=api
+      - OTEL_SERVICE_NAME=observabilidade-api
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=none
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - LOGGING_PATTERN_LEVEL=trace_id=%mdc{trace_id} span_id=%mdc{span_id} %5p
+      - OTEL_RESOURCE_ATTRIBUTES=service.namespace=observabilidade
+      - JAVA_TOOL_OPTIONS=-javaagent:/app/opentelemetry-javaagent.jar
+    entrypoint: java -jar /app/observabilidade-1.0.0.jar
+
+  observabilidade-worker:
+    container_name: observabilidade-worker
+    image: eclipse-temurin:17-jre-focal
+    volumes:
+      - ./opentelemetry-javaagent.jar:/app/opentelemetry-javaagent.jar
+      - ./build/libs/observabilidade-1.0.0.jar:/app/observabilidade-1.0.0.jar
+    environment:
+      - KAFKA_BROKERS=kafka:29092
+      - MONGO_URI=mongodb://mongo:27017/observabilidade
+      - ACTIVITY_URI=http://www.boredapi.com
+      - OBSERVABILIDADE_URI=http://observabilidade-api-lb:8080
+      - SPRING_APPLICATION_NAME=observabilidade-worker
+      - SPRING_PROFILES_ACTIVE=worker
+      - OTEL_SERVICE_NAME=observabilidade-worker
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=none
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - LOGGING_PATTERN_LEVEL=trace_id=%mdc{trace_id} span_id=%mdc{span_id} %5p
+      - OTEL_RESOURCE_ATTRIBUTES=service.namespace=observabilidade
+      - JAVA_TOOL_OPTIONS=-javaagent:/app/opentelemetry-javaagent.jar
+    entrypoint: java -jar /app/observabilidade-1.0.0.jar

@@ -1,0 +1,52 @@
+spring:
+  data:
+    mongodb:
+      uri: ${MONGO_URI}
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            logger-level: full
+          activity:
+            url: ${ACTIVITY_URI}
+          observabilidade:
+            url: ${OBSERVABILIDADE_URI}
+    stream:
+      function:
+        autodetect: false
+      output-bindings: publishActivityOut
+      bindings:
+        publishActivityOut:
+          destination: activity-topic
+        saveActivityListener-in-0:
+          destination: activity-topic
+          group: observabilidade
+      kafka:
+        binder:
+          brokers: ${KAFKA_BROKERS}
+          auto-create-topics: true
+
+logging:
+  level:
+    '[com.example.observabilidade]': debug
+
+scheduler:
+  getRandomActivityJob:
+    cron: "-"
+
+---
+
+spring:
+  config:
+    activate:
+      on-profile: worker
+  main:
+    web-application-type: none
+  cloud:
+    function:
+      definition: saveActivityListener
+
+scheduler:
+  getRandomActivityJob:
+    cron: "*/20 * * * * *"

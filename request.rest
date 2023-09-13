@@ -1,0 +1,21 @@
+GET http://localhost:8080/activity/random-from-client
+
+###
+
+POST http://localhost:8080/activity
+Content-Type: application/json
+traceparent: 00-2b97bdd0e5172a966edf2d539ef31694-916cba58394e12e2-01
+
+{
+    "key": "14",
+    "activity": "Learn Express.js",
+    "type": "education",
+    "participants": 1,
+    "price": "0.1",
+    "link": "https://expressjs.com/"
+}
+
+###
+
+GET http://localhost:3000/api/activity
+Danilo: Moreira
